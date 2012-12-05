@@ -1,0 +1,40 @@
+mongoose  = require 'mongoose'
+Schema    = mongoose.Schema
+
+ProposalSchema = new Schema
+  resolved: Date
+  passed: Boolean
+
+  revisions: [{
+    user_id: String
+    name: String
+    date: Date
+    text: {type: String, required: true}
+  }]
+
+  opinions: [{
+    user_id: String
+    name: String
+    revisions: [{
+      vote: {type: String, required: true}
+      text: String
+      date: Date
+    }]
+  }]
+
+  sharing: {
+    group_id: String
+    public_view_until: Date
+    public_edit_until: Date
+    extra_viewers: [String]
+    extra_editors: [String]
+    advertise: Boolean
+  }
+ProposalSchema.pre 'save', (next) ->
+  for rev in @revisions
+    rev.date = new Date() unless rev.date?
+  for opinion in @opinions
+    for rev in opinion.revisions
+      rev.date = new Date() unless rev.date?
+  next()
+Proposal = mongoose.model("Proposal", ProposalSchema)

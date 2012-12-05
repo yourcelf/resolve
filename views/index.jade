@@ -1,0 +1,47 @@
+extends layout
+
+block body
+  script(type='text/template', id='splashTemplate')
+    div.row-fluid
+      div.span12
+        h1 Resolve
+        div(style='text-align: center')
+          p.
+            Decide something, together. This tool is for finalizing decisions.
+            Think of it as "doodle for deliberation".
+          a.btn.btn-primary.btn-large.softnav(href='new/') New Proposal
+  script(type='text/template', id='listedProposalTemplate')
+
+  script(type='text/template', id='addProposalTemplate')
+    div.row-fluid
+      h1 Make a proposal
+      br
+      br
+      div.span6.offset3
+        form#new_proposal_form.form-horizontal
+          <% if (!intertwinkles.is_authenticated()) { %>
+          div.control-group.name-field
+            label.control-label(for='id_name') Your name
+            div.controls
+              input#id_name(type='text', name='name')
+              br
+              span.small-green Or, better yet, just sign in. &#8599;
+          <% } else { %>
+          input(type='hidden', name='user_id', value='<%= intertwinkles.user.id %>')
+          <% } %>
+          div.control-group
+            label.control-label(for='id_group') Group and sharing
+            div.controls.group-choice
+          div.control-group
+            label.control-label(for="id_proposal") Proposal
+            div.controls
+              span.help-inline.
+                Please write the proposal with the language you would like the
+                group to approve.
+              textarea#id_proposal(name="proposal", rows=10, cols=20, style='width: 100%')
+          div.control-group
+            div.controls
+              button.btn.btn-primary.btn-large(type='submit')
+                i.icon-thumbs-up.icon-white
+                | &nbsp;Make Proposal&nbsp;
+                i.icon-thumbs-down.icon-white
