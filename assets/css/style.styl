@@ -1,1 +1,101 @@
 @import "../intertwinkles/css/intertwinkles"
+
+.proposal-page
+  .user
+    white-space: nowrap
+
+  .date
+    float: right
+
+  .proposal
+    background-color: rgba(200, 200, 200, 0.2)
+    border-radius: 5px
+    padding: 1em
+
+    .text
+      border-left: 6px solid #ddd
+      margin-left: 0.5em
+
+  .respond
+    margin-top: 1em
+
+  .opinion
+    padding: 1em
+    margin-top: 0.5em
+    margin-bottom: 0.5em
+    border: 1px solid #eee
+    .text
+      margin-top: 0.5em
+      margin-bottom: 0.5em
+
+    &.stale
+      .vote, .text, .byline
+        opacity: 0.5
+
+    &.stale-msg
+      color: #300
+      font-size: 0.8em
+      font-family: sans-serif
+
+  .vote
+    text-align: center
+    font-style: italic
+    &.yes
+      color: #090
+    &.weak_yes
+      color: #393
+    &.discuss
+      background-color: #ffd
+    &.no
+      color: #900
+    &.block
+      background-color: #f00
+      color: white
+    &.non-voting
+      background-color: #999
+      color: white
+  .non-voting-warning
+    background-color: #999
+    color: white
+
+  .multibar
+    .popover
+      width: 20em
+      i
+        small-green()
+        font-style: normal
+    .bar-set
+      width: 100%
+    .bar
+      float: left
+      -webkit-box-sizing: border-box
+      -moz-box-sizing: border-box
+      -ms-box-sizing: border-box
+      box-sizing: border-box
+      border: 1px solid #eee
+      &.stale
+        opacity: 0.5
+      &.yes
+        background-color: #0c0
+      &.weak_yes
+        background-color: #396
+      &.discuss
+        background-color: #ffa
+      &.no
+        background-color: #faa
+      &.block
+        background-color: #f00
+        color: white
+      &.abstain
+        background-color: white
+        border: 1px solid #eee
+      &.missing
+        background-color: #000
+        color: white
+      &.non-voting
+        background-color: #999
+        color: white
+    th
+      font-weight: normal
+      white-space: nowrap
+      text-align: right

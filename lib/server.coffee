@@ -4,10 +4,11 @@ intertwinkles = require 'node-intertwinkles'
 RoomManager   = require('iorooms').RoomManager
 RedisStore    = require('connect-redis')(express)
 _             = require 'underscore'
+async         = require 'async'
 mongoose      = require 'mongoose'
-schema        = require './schema'
 
 start = (config) ->
+  schema = require('./schema').load(config)
   db = mongoose.connect(
     "mongodb://#{config.dbhost}:#{config.dbport}/#{config.dbname}"
   )
@@ -45,7 +46,24 @@ start = (config) ->
   #
   # Routes
   #
-  
+
+  server_error = (req, res, err) ->
+    res.statusCode = 500
+    console.error(err)
+    return res.send("Server error") # TODO pretty 500 page
+
+  not_found = (req, res) ->
+    res.statusCode = 404
+    return res.send("Not found") # TODO pretty 404 page
+
+  bad_request = (req, res) ->
+    res.statusCode = 400
+    return res.send("Bad request") # TODO pretty 400 page
+
+  permission_denied = (req, res) ->
+    res.statusCode = 403
+    return res.send("Permission denied")
+
   context = (req, obj, initial_data) ->
     return _.extend({
       initial_data: _.extend({
@@ -59,8 +77,9 @@ start = (config) ->
       flash: req.flash()
     }, obj)
 
-  index_res = (req, res, extra_context) ->
-    res.render 'index', context(req, extra_context or {})
+  index_res = (req, res, extra_context, initial_data) ->
+    res.render 'index', context(req, extra_context or {}, initial_data or {})
+
 
   app.get "/", (req, res) ->
     index_res(req, res, {
@@ -73,15 +92,34 @@ start = (config) ->
     })
 
   app.get "/p/:id/", (req, res) ->
-    index_res(req, res, {
-      title: "Resolve: The Proposal's Name"
-    })
+    schema.Proposal.findOne {_id: req.params.id}, (err, doc) ->
+      return server_error(req, res, err) if err?
+      return not_found(req, res) unless doc?
+      return permission_denied(req, res) unless intertwinkles.can_view(req.session, doc)
+      index_res(req, res, {
+        title: "Resolve: The Proposal's Name"
+      }, {
+        proposal: doc
+      })
 
   iorooms.onChannel "get_proposal_list", (socket, data) ->
 
   iorooms.onChannel "get_proposal", (socket, data) ->
+    unless data.callback?
+      return socket.emit "error", {error: "Missing 'callback' parameter"}
+    schema.Proposal.findOne data.proposal, (err, proposal) ->
+      response = {}
+      unless intertwinkles.can_view(socket.session, proposal)
+        response.error = "Permission denied"
+      else
+        proposal.sharing = intertwinkles.clean_sharing(socket.session, proposal)
+        response.proposal = proposal
+        socket.emit data.callback, response
 
   iorooms.onChannel "save_proposal", (socket, data) ->
+    if data.opinion? and not data.proposal?
+      return socket.emit data.callback or "error", {error: "Missing {proposal: _id}"}
+
     async.waterfall [
       # Fetch the proposal.
       (done) ->
@@ -107,21 +145,22 @@ start = (config) ->
             if data.proposal?.sharing?
               unless intertwinkles.can_change_sharing(socket.session, proposal)
                 return done("Not allowed to change sharing.")
-              unless socket.session.groups.groups[data.proposal.sharing.group_id]?
+              if (data.proposal.sharing.group_id? and
+                  not socket.session.groups.groups[data.proposal.sharing.group_id]?)
                 return done("Unauthorized group")
               proposal.sharing = data.proposal.sharing
 
             # Add a revision.
             if data.proposal?.proposal?
-              if intertwinkles.is_authenticated()
+              if intertwinkles.is_authenticated(socket.session)
                 name = socket.session.groups.users[socket.session.auth.user_id].name
               else
                 name = data.proposal.name
-              proposal.revisions.push [{
-                user_id: socket.session.auth.user_id
+              proposal.revisions.push({
+                user_id: socket.session.auth?.user_id
                 name: name
                 text: data.proposal.proposal
-              }]
+              })
             if proposal.revisions.length == 0
               return done("Missing proposal field.")
 
@@ -129,6 +168,9 @@ start = (config) ->
             if data.proposal?.passed?
               proposal.passed = data.proposal.passed
               proposal.resolved = new Date()
+            else if data.proposal?.reopened?
+              proposal.passed = null
+              proposal.resolved = null
 
             proposal.save (err, doc) ->
               return done(err, doc, null)
@@ -156,25 +198,32 @@ start = (config) ->
               opinion_set = {
                 user_id: user_id
                 name: name
-                revisions: []
+                revisions: [{
+                  text: data.opinion.text
+                  vote: data.opinion.vote
+                }]
               }
               proposal.opinions.push(opinion_set)
-            opinion_set.revisions.push([
-              text: data.opinion.text
-              vote: data.opinion.vote
-            ])
+            else
+              opinion_set.revisions.unshift({
+                text: data.opinion.text
+                vote: data.opinion.vote
+              })
+            console.log proposal
             proposal.save (err, doc) ->
-              return done(err, null, opinion_set)
+              console.log doc
+              return done(err, doc)
 
-    ], (err, proposal, opinion_set) ->
+    ], (err, proposal) ->
+      # Emit the result.
       if err?
         if data.callback?
           return socket.emit data.callback, {error: err}
         else
           return socket.emit "error", {error: err}
 
-      emittal = { proposal: proposal, opinion_set: opinion_set }
-      socket.broadcast.to(proposal.id, emittal)
+      emittal = { proposal: proposal }
+      socket.broadcast.to(proposal._id).emit "proposal_change", emittal
       socket.emit(data.callback, emittal) if data.callback?
 
   intertwinkles.attach(config, app, iorooms)

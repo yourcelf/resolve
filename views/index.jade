@@ -26,9 +26,9 @@ block body
               input#id_name(type='text', name='name')
               br
               span.small-green Or, better yet, just sign in. &#8599;
-          <% } else { %>
-          input(type='hidden', name='user_id', value='<%= intertwinkles.user.id %>')
           <% } %>
+          input(type='hidden', id='id_user_id', name='user_id',
+                value='<%= intertwinkles.user.id %>')
           div.control-group
             label.control-label(for='id_group') Group and sharing
             div.controls.group-choice
@@ -45,3 +45,110 @@ block body
                 i.icon-thumbs-up.icon-white
                 | &nbsp;Make Proposal&nbsp;
                 i.icon-thumbs-down.icon-white
+
+  script(type='text/template', id='showProposalTemplate')
+    div.proposal-page
+      div.row-fluid(style='position: relative;')
+        h1 Proposal
+        div.pull-right(style='position: absolute; right: 1em; top: 1em; text-align: left;')
+          ul.sharing-online-group
+            li.room-users
+            li.sharing
+
+      div.row-fluid
+        div.span6.proposal
+          blockquote.text
+          div
+            a.pull-right.btn.btn-large.finalize(href='#') Finalize
+          div(style='clear: both;')
+          div.byline
+            span.editors
+            span.date
+
+        div.span6
+          div.tallies
+          div.missing
+
+      div.respond(style='text-align: center;')
+        h3.needed.hide Your response is needed!
+        a.btn.btn-primary.btn-large.respond-link(href='#') Weigh in
+
+      div.opinions
+
+      div.modal.fade.hide.edit-response-modal
+        form.weigh-in.form-horizontal
+          div.modal-header
+            button.close.modal(type='button', data-dismiss='modal', aria-hidden='true',
+                               value='&times;')
+            h3 Your vote
+          div.modal-body
+            div.control-group.name
+              label.control-label(for="id_user") Name:
+              div.controls
+                div.name-input
+
+            div.control-group
+              label.control-label(for="id_vote") Vote:
+              div.controls
+                select#id_vote(name='vote')
+                  option(value='') ----
+                  <% for (var i = 0; i < vote_order.length; i++) { %>
+                  <option value='<%= vote_order[i][0] %>'><%= vote_order[i][1] %></option>
+                  <% } %>
+            div.control-group
+              label.control-label(for="id_text") Please explain:
+              div.controls
+                textarea#id_text(name='text', rows='10', cols='30')
+          div.modal-footer
+            a.btn(href='#', data-dismiss='modal') Cancel
+            button.btn.btn-primary(type='submit') Save
+
+  script(type='text/template', id='opinionTemplate').
+    <div id='<%= _id %>' class='opinion <%= stale ? "stale" : "" %> span4'>
+      <% if (stale) { %>
+        <div class='stale-msg'>
+          The proposal has changed since this opinion was recorded.
+        </div>
+      <% } %>
+      <% if (is_non_voting) { %>
+        <div class='non-voting-warning'>Non-voting opinion:</div>
+      <% } %>
+      <div class='vote <%= vote_value %> <%= is_non_voting ? "" : "" %>'><%= vote_display %></div>
+        <div class='text'><%- rendered_text %></div>
+        <div class='byline'>
+          <span class='user'><%- rendered_user %></span>
+          <span class='date'></span>
+        </div>
+      </div>
+    </div>
+
+  script(type='text/template', id='talliesTemplate').
+    <table class='multibar'>
+      <% for (var i = 0; i < tallies.length; i++) { %>
+        <% var tally = tallies[i]; %>
+        <% if (tally.count > 0) { %>
+          <tr>
+            <th><%= tally.vote_display %></th>
+            <td class='bar-set bar-set-<%= tally.className %>'>
+              <% for (var j = 0; j < tally.counts.length; j++) { %>
+                <% var type = tally.counts[j]; %>
+                <% if (type.count > 0) { %>
+                  <div class='bar <%= type.className %> popover-trigger'
+                       rel="popover"
+                       data-title='<%= type.title %>'
+                       data-content='<%= type.content %>'
+                       data-placement='bottom'
+                       data-trigger='hover'
+                       data-html='true'
+                       style='width: <%= type.percentage %>%' 
+                       >
+                    <%= type.count %>
+                  </div>
+                <% } %>
+              <% } %>
+            </td>
+          </tr>
+        <% } %>
+      <% } %>
+    </table>
+
