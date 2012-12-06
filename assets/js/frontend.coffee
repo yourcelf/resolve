@@ -220,7 +220,7 @@ class ShowProposalView extends BaseView
     @$(".proposal .editors").html("by " + (
       @_renderUser(r.user_id, r.name) for r in resolve.model.get("revisions")
     ).join(", "))
-    @addView ".proposal .date", new intertwinkles.AutoUpdatingDate(rev.date)
+    @addView ".proposal .date-auto", new intertwinkles.AutoUpdatingDate(rev.date)
     @userChoice = new intertwinkles.UserChoice()
     @addView(".edit-response-modal .name-input", @userChoice)
 
@@ -237,7 +237,7 @@ class ShowProposalView extends BaseView
     @_opinionRevs or= {}
     for opinion in resolve.model.get("opinions")
       is_non_voting = (
-        resolve.model.get("sharing").group_id? and
+        resolve.model.get("sharing")?.group_id? and
         intertwinkles.is_authenticated() and
         intertwinkles.groups[resolve.model.get("sharing").group_id]? and
         not _.find(
@@ -288,12 +288,12 @@ class ShowProposalView extends BaseView
     # is a voting member or not, or if this proposal is not owned by a group,
     # and thus there's no notion of voting or non-.
     show_non_voting = (
-      resolve.model.get("sharing").group_id? and
+      resolve.model.get("sharing")?.group_id? and
       intertwinkles.is_authenticated() and
       intertwinkles.groups[resolve.model.get("sharing").group_id]?
     )
 
-    group = intertwinkles.groups?[resolve.model.get("sharing").group_id]
+    group = intertwinkles.groups?[resolve.model.get("sharing")?.group_id]
     tallies = []
     for [vote_value, vote_display] in @vote_order
       votes = by_vote[vote_value] or []

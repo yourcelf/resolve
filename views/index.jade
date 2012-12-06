@@ -58,12 +58,17 @@ block body
       div.row-fluid
         div.span6.proposal
           blockquote.text
-          div
-            a.pull-right.btn.btn-large.finalize(href='#') Finalize
+          div.btn-group.pull-right
+            button.btn.edit-proposal(type='button')
+              <i class='icon-edit'></i>
+              &nbsp;Edit
+            button.btn.finalize(type='button') Finalize
           div(style='clear: both;')
           div.byline
             span.editors
-            span.date
+            span.date.pull-right
+              | Last modified:&nbsp;
+              span.date-auto
 
         div.span6
           div.tallies

@@ -66,10 +66,10 @@ start = (config) ->
 
   context = (req, obj, initial_data) ->
     return _.extend({
-      initial_data: _.extend({
-        email: req?.session?.auth?.email or null
-        groups: req?.session?.groups or null
-      }, initial_data or {})
+      initial_data: _.extend(
+        intertwinkles.get_initial_data(req?.session),
+        initial_data or {}
+      )
       conf: {
         api_url: config.intertwinkles.api_url
         apps: config.intertwinkles.apps
@@ -146,14 +146,14 @@ start = (config) ->
               unless intertwinkles.can_change_sharing(socket.session, proposal)
                 return done("Not allowed to change sharing.")
               if (data.proposal.sharing.group_id? and
-                  not socket.session.groups.groups[data.proposal.sharing.group_id]?)
+                  not socket.session.groups[data.proposal.sharing.group_id]?)
                 return done("Unauthorized group")
               proposal.sharing = data.proposal.sharing
 
             # Add a revision.
             if data.proposal?.proposal?
               if intertwinkles.is_authenticated(socket.session)
-                name = socket.session.groups.users[socket.session.auth.user_id].name
+                name = socket.session.users[socket.session.auth.user_id].name
               else
                 name = data.proposal.name
               proposal.revisions.push({
@@ -181,7 +181,7 @@ start = (config) ->
             return done("Missing vote") unless data.opinion?.vote
             if data.opinion?.user_id
               user_id = data.opinion.user_id
-              user = socket.session.groups.users[user_id]
+              user = socket.session.users[user_id]
               return done("Unauthorized user id") unless user?
               name = user.name
             else
