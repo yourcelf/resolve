@@ -5,7 +5,8 @@
     white-space: nowrap
 
   .proposal
-    background-color: rgba(200, 200, 200, 0.2)
+    //background-color: rgba(200, 200, 200, 0.2)
+    green-glow()
     border-radius: 5px
     padding: 1em
 
@@ -27,10 +28,10 @@
 
     &.stale
       .vote, .text, .byline
-        opacity: 0.5
+        opacity: 0.3
 
-    &.stale-msg
-      color: #300
+    .stale-msg
+      color: #600
       font-size: 0.8em
       font-family: sans-serif
 

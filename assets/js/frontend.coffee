@@ -153,8 +153,13 @@ class ShowProposalView extends BaseView
   opinionTemplate: _.template($("#opinionTemplate").html())
   talliesTemplate: _.template($("#talliesTemplate").html())
   events: _.extend {
-    'click  .respond-link': 'showResponseForm'
-    'submit form.weigh-in': 'saveResponse'
+    'click button.edit-proposal': 'showEditProposalForm'
+    'click   .finalize-proposal': 'finalizeProposal'
+    'click     .proposal-passed': 'proposalPassed'
+    'click     .proposal-failed': 'proposalFailed'
+    'click        .respond-link': 'showResponseForm'
+    'submit       form.weigh-in': 'saveResponse'
+    'submit  form.edit-proposal': 'saveProposalRevision'
   }, BaseEvents
   votes: {
     yes: "Strongly approve"
@@ -373,6 +378,72 @@ class ShowProposalView extends BaseView
     @$(".tallies").html(@talliesTemplate({tallies}))
     @$("[rel=popover]").popover()
 
+  showEditProposalForm: (event) =>
+    event.preventDefault()
+    if intertwinkles.is_authenticated()
+      @$(".edit-proposal-modal [name=revision_user_id]").val(intertwinkles.user.id)
+      @$(".edit-proposal-modal .name-field-group").hide()
+    else
+      @$(".edit-proposal-modal [name=revision_user_id]").val("")
+      @$(".edit-proposal-modal .name-field-group").show()
+    @$(".edit-proposal-modal").modal('show')
+    @$(".edit-proposal-modal textarea").val(resolve.model.get("revisions")[0].text)
+
+  saveProposalRevision: (event) =>
+    event.preventDefault()
+
+    cleanedData = @validateFields "form.edit-proposal", [
+      ["[name=revision_name]", (val) ->
+          if @$("[name=revision_user_id]").val()
+            return ""
+          return val or null
+        , "This field is required."],
+      ["[name=proposal_revision]", ((val) -> val or null), "This field is required."]
+    ]
+    return if cleanedData == false
+
+    @_saveProposal event, {
+      proposal: cleanedData.proposal_revision
+      name: cleanedData.revision_name
+      user_id: @$("[name=revision_user_id]").val()
+    }, =>
+      @$(".edit-proposal-modal").modal('hide')
+
+  finalizeProposal: (event) =>
+    event.preventDefault()
+    @$(".finalize-proposal-modal").modal('show')
+
+  proposalPassed: (event) =>
+    @_saveProposal event, {passed: true}, =>
+      @$(".finalize-proposal-modal").modal('hide')
+
+  proposalFailed: (event) =>
+    @_saveProposal event, {passed: false}, =>
+      @$(".finalize-proposal-modal").modal('hide')
+
+  _saveProposal: (event, changes, done) =>
+    event.preventDefault()
+    @$(event.currentTarget).addClass("loading").attr("disabled", true)
+    callback = "update_proposal"+ new Date().getTime()
+
+    intertwinkles.socket.once callback, (data) =>
+      @$(event.currentTarget).removeClass("loading").attr("disabled", false)
+      if data.error?
+        flash "error", "Uh-oh, there was a server error. SRY!!!"
+        console.info(data.error)
+      else
+        resolve.model.set(data.proposal)
+      done?()
+
+    update = _.extend {}, changes, {_id: resolve.model.id}
+    intertwinkles.socket.emit "save_proposal", {
+      action: "update"
+      proposal: update
+      callback: callback
+    }
+
+
+
   showResponseForm: (event) =>
     event.preventDefault()
     opinion_id = $(event.currentTarget).attr("data-id")
@@ -403,7 +474,7 @@ class ShowProposalView extends BaseView
 
     intertwinkles.socket.once "save_complete", (data) =>
       @$("form.weigh-in input[type=submit]").removeClass("loading").attr("disabled", false)
-      @$(".modal").modal('hide')
+      @$(".edit-response-modal").modal('hide')
       if data.error?
         flash "error", "Oh noes.. There seems to be a server malfunction."
         console.info(data.error)

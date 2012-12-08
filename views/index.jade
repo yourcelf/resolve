@@ -62,7 +62,7 @@ block body
             button.btn.edit-proposal(type='button')
               <i class='icon-edit'></i>
               &nbsp;Edit
-            button.btn.finalize(type='button') Finalize
+            button.btn.finalize-proposal(type='button') Finalize
           div(style='clear: both;')
           div.byline
             span.editors
@@ -71,20 +71,57 @@ block body
               span.date-auto
 
         div.span6
+          h4 Vote Tallies
           div.tallies
+            | No votes yet.
           div.missing
 
       div.respond(style='text-align: center;')
-        h3.needed.hide Your response is needed!
         a.btn.btn-primary.btn-large.respond-link(href='#') Weigh in
 
       div.opinions
 
+      div.modal.fade.hide.edit-proposal-modal
+        form.edit-proposal.form-horizontal
+          div.modal-header
+            button.close(type='button', data-dismiss='modal', aria-hidden='true') &times;
+            h3 Edit Proposal
+          div.modal-body
+            p.revision-warning.
+              Note: Others have already voted for this proposal. If you change
+              it now, their votes will be marked as "stale".
+            input(type='hidden', name='revision_user_id')
+            div.control-group.name-field-group
+              label.control-label(for='revision_name') Your name
+              div.controls
+                input#revision_name(type='text', name='revision_name')
+                span.help-inline Or just sign in first &#8599;
+            div.control-group
+              div.controls
+              textarea(name='proposal_revision', rows=10, cols=30, style='width: 95%')
+          div.modal-footer
+            input.btn.btn-primary(type='submit', value='Save')
+            a.pull-left.btn(href='#', data-dismiss='modal') Cancel
+
+      div.modal.fade.hide.finalize-proposal-modal
+        div.modal-header
+          button.close(type='button', data-dismiss='modal', aria-hidden='true') &times;
+          h3 Finalize Proposal
+        div.modal-body
+          p.
+            Finalizing the proposal ends voting, and marks the proposal as
+            passed or failed.
+        div.modal-footer
+          button.btn.btn-danger.proposal-failed(type='button') Proposal failed
+          button.btn.btn-success.proposal-passed(type='button') Proposal passed
+          a.pull-left.btn(href='#', data-dismiss='modal') Cancel
+
+
+
       div.modal.fade.hide.edit-response-modal
         form.weigh-in.form-horizontal
           div.modal-header
-            button.close.modal(type='button', data-dismiss='modal', aria-hidden='true',
-                               value='&times;')
+            button.close(type='button', data-dismiss='modal', aria-hidden='true') &times;
             h3 Your vote
           div.modal-body
             div.control-group.name
@@ -105,8 +142,8 @@ block body
               div.controls
                 textarea#id_text(name='text', rows='10', cols='30')
           div.modal-footer
-            a.btn(href='#', data-dismiss='modal') Cancel
             button.btn.btn-primary(type='submit') Save
+            a.pull-left.btn(href='#', data-dismiss='modal') Cancel
 
   script(type='text/template', id='opinionTemplate').
     <div id='<%= _id %>' class='opinion <%= stale ? "stale" : "" %> span4'>
@@ -122,7 +159,7 @@ block body
         <div class='text'><%- rendered_text %></div>
         <div class='byline'>
           <span class='user'><%- rendered_user %></span>
-          <span class='date'></span>
+          <span class='date pull-right'></span>
         </div>
       </div>
     </div>

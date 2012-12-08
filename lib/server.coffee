@@ -156,7 +156,9 @@ start = (config) ->
                 name = socket.session.users[socket.session.auth.user_id].name
               else
                 name = data.proposal.name
-              proposal.revisions.push({
+              unless name?
+                return done("Missing name for proposal revision.")
+              proposal.revisions.unshift({
                 user_id: socket.session.auth?.user_id
                 name: name
                 text: data.proposal.proposal
@@ -209,9 +211,7 @@ start = (config) ->
                 text: data.opinion.text
                 vote: data.opinion.vote
               })
-            console.log proposal
             proposal.save (err, doc) ->
-              console.log doc
               return done(err, doc)
 
     ], (err, proposal) ->
