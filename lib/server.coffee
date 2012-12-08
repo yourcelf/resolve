@@ -78,8 +78,11 @@ start = (config) ->
     }, obj)
 
   index_res = (req, res, extra_context, initial_data) ->
-    res.render 'index', context(req, extra_context or {}, initial_data or {})
-
+    intertwinkles.list_accessible_documents schema.Proposal, req.session, (err, docs) ->
+      return server_error(req, res, err) if err?
+      res.render 'index', context(req, extra_context or {}, _.extend(initial_data or {}, {
+        listed_proposals: docs
+      }))
 
   app.get "/", (req, res) ->
     index_res(req, res, {
@@ -97,12 +100,21 @@ start = (config) ->
       return not_found(req, res) unless doc?
       return permission_denied(req, res) unless intertwinkles.can_view(req.session, doc)
       index_res(req, res, {
-        title: "Resolve: The Proposal's Name"
+        title: "Resolve: " + doc.revisions[0].text.split(" ").slice(0, 10).join(" ") + "..."
       }, {
         proposal: doc
       })
 
   iorooms.onChannel "get_proposal_list", (socket, data) ->
+    if not data?.callback?
+      socket.emit "error", {error: "Missing callback parameter."}
+    else
+      intertwinkles.list_accessible_documents(
+        schema.Proposal, socket.session, (err, proposals) ->
+          if err? then return socket.emit data.callback, {error: err}
+          socket.emit data.callback, {proposals}
+      )
+
 
   iorooms.onChannel "get_proposal", (socket, data) ->
     unless data.callback?
@@ -114,7 +126,7 @@ start = (config) ->
       else
         proposal.sharing = intertwinkles.clean_sharing(socket.session, proposal)
         response.proposal = proposal
-        socket.emit data.callback, response
+      socket.emit data.callback, response
 
   iorooms.onChannel "save_proposal", (socket, data) ->
     if data.opinion? and not data.proposal?
@@ -212,6 +224,22 @@ start = (config) ->
                 vote: data.opinion.vote
               })
             proposal.save (err, doc) ->
+              return done(err, doc)
+
+          # Delete a vote.
+          when "trim"
+            console.log data
+            return done("Missing opinion id") unless data.opinion?._id
+            found = false
+            for opinion, i in proposal.opinions
+              if opinion._id.toString() == data.opinion._id
+                proposal.opinions.splice(i, 1)
+                found = true
+                break
+            unless found
+              return done("Opinion for `#{data.opinion._id}` not found.")
+            proposal.save (err, doc) ->
+              console.log doc
               return done(err, doc)
 
     ], (err, proposal) ->

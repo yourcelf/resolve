@@ -3,7 +3,7 @@
 intertwinkles.build_toolbar($("header"), {applabel: "resolve"})
 intertwinkles.build_footer($("footer"))
 
-resolve = {}
+resolve = window.resolve = {}
 
 class Proposal extends Backbone.Model
   idAttribute: "_id"
@@ -16,6 +16,8 @@ resolve.model = new Proposal()
 
 if INITIAL_DATA.proposal?
   resolve.model.set(INITIAL_DATA.proposal)
+if INITIAL_DATA.listed_proposals?
+  resolve.listed_proposals = INITIAL_DATA.listed_proposals
 
 handle_error = (data) ->
   flash "error", "Oh golly, but the server has errored. So sorry."
@@ -87,11 +89,35 @@ class SplashView extends BaseView
   render: =>
     @$el.html(@template())
 
+    selector_lists = [
+      [@$(".group-proposals"), resolve.listed_proposals?.group]
+      [@$(".public-proposals"), resolve.listed_proposals?.public]
+    ]
+
+    for [selector, list] in selector_lists
+      if list? and list.length > 0
+        selector.html("")
+        for proposal in list
+          listing = @itemTemplate({
+            url: "/p/#{proposal._id}/"
+            proposal: proposal
+            group: intertwinkles.groups?[proposal.sharing?.group_id]
+          })
+          selector.append(listing)
+    @$(".proposal-listing-date").each =>
+      @addView this, new intertwinkles.AutoUpdatingDate($(this).attr("data-date"))
+
+
   getProposalList: =>
     intertwinkles.socket.on "list_proposals", (data) =>
       if data.error?
         flash "error", "The server. It has got confused."
-        console.info(data.error)
+      else
+        resolve.listed_proposals = data.proposals
+        @render()
+    intertwinkles.socket.emit "get_proposal_list", {
+      callback: "list_proposals"
+    }
 
 class AddProposalView extends BaseView
   template: _.template($("#addProposalTemplate").html())
@@ -157,10 +183,17 @@ class ShowProposalView extends BaseView
     'click   .finalize-proposal': 'finalizeProposal'
     'click     .proposal-passed': 'proposalPassed'
     'click     .proposal-failed': 'proposalFailed'
-    'click        .respond-link': 'showResponseForm'
-    'submit       form.weigh-in': 'saveResponse'
     'submit  form.edit-proposal': 'saveProposalRevision'
+    'click        .respond-link': 'showOpinionForm'
+    'submit       form.weigh-in': 'saveOpinion'
+    'click     a.delete-opinion': 'showDeleteOpinionForm'
+    'submit form.delete-opinion': 'deleteOpinion'
+    'click        .edit-opinion': 'editOpinion'
+    'click     .confirm-my-vote': 'confirmMyVote'
+    'click     .reopen-proposal': 'showReOpenProposalForm'
+    'click       .really-reopen': 'reOpenProposal'
   }, BaseEvents
+
   votes: {
     yes: "Strongly approve"
     weak_yes: "Approve with reservations"
@@ -172,12 +205,13 @@ class ShowProposalView extends BaseView
 
   initialize: (options) ->
     super()
-    @vote_order = ([v, @votes[v]] for v in ["yes", "weak_yes", "discuss", "no", "block", "abstain"])
+    @vote_order = (
+      [v, @votes[v]] for v in ["yes", "weak_yes", "discuss", "no", "block", "abstain"]
+    )
 
     resolve.model.on "change", @proposalChanged, this
     intertwinkles.user.on "change", =>
-      @renderProposal()
-      @renderOpinions()
+      @postRender()
     , this
     intertwinkles.socket.on "proposal_change", @onProposalData
 
@@ -192,12 +226,15 @@ class ShowProposalView extends BaseView
 
   proposalChanged: =>
     changes = resolve.model.changedAttributes()
-    if changes.revisions? or changes.resolved? or changes.revisions? or changes.sharing?
-      @renderProposal()
-    if changes.opinions?
-      @renderOpinions()
+    if changes._id?
+      @render()
+    else
+      if changes.revisions? or changes.resolved? or changes.revisions? or changes.sharing?
+        @postRender()
 
   render: =>
+    if not resolve.model.id?
+      return @$el.html("<img src='/static/img/spinner.gif' /> Loading...")
     @$el.html @template({
       vote_order: @vote_order
     })
@@ -215,32 +252,60 @@ class ShowProposalView extends BaseView
         callback: "proposal_saved"
       }
     @addView ".sharing", sharingButton
+    @postRender()
 
+  postRender: =>
     @renderProposal()
     @renderOpinions()
+    @setVisibility()
 
   renderProposal: =>
-    rev = resolve.model.get("revisions")[0]
-    @$(".proposal .text").html(intertwinkles.markup(rev.text))
-    @$(".proposal .editors").html("by " + (
-      @_renderUser(r.user_id, r.name) for r in resolve.model.get("revisions")
-    ).join(", "))
-    @addView ".proposal .date-auto", new intertwinkles.AutoUpdatingDate(rev.date)
-    @userChoice = new intertwinkles.UserChoice()
-    @addView(".edit-response-modal .name-input", @userChoice)
+    rev = resolve.model.get("revisions")?[0]
+    if rev?
+      @$(".proposal .text").html(intertwinkles.markup(rev.text))
+      @$(".proposal .editors").html("by " + (
+        @_renderUser(r.user_id, r.name) for r in resolve.model.get("revisions")
+      ).join(", "))
+      @addView ".proposal .date-auto", new intertwinkles.AutoUpdatingDate(rev.date)
+      @userChoice = new intertwinkles.UserChoice()
+      @addView(".edit-response-modal .name-input", @userChoice)
+
+    resolved = resolve.model.get("resolved")
+    if resolved?
+      @$(".resolution").toggleClass("alert-success", resolve.model.get("passed"))
+      @$(".resolution .resolved-date").html(
+        "<nobr>" +
+        new Date(resolved).toString("htt dddd, MMMM dd, yyyy") + "</nobr>")
+
+  _getOwnOpinion: =>
+    return _.find resolve.model.get("opinions"), (o) ->
+        o.user_id == intertwinkles.user.id
 
   renderOpinions: =>
     if intertwinkles.is_authenticated() and intertwinkles.can_edit(resolve.model)
-      ownOpinion = _.find resolve.model.get("opinions"), (o) ->
-        o.user_id == intertwinkles.user.id
-      if not ownOpinion
-        @$(".needed").show()
+      ownOpinion = @_getOwnOpinion()
+      if not ownOpinion?
+        @$(".respond-link").addClass("btn-primary").html("Vote now")
       else
-        @$(".respond-link").removeClass("btn-primary").html("Change vote")
+        @$(".respond-link")
+          .removeClass("btn-primary")
+          .html("Change vote")
 
     @_renderedOpinions or= {}
     @_opinionRevs or= {}
-    for opinion in resolve.model.get("opinions")
+
+    opinions = resolve.model.get("opinions").slice()
+    opinions = _.sortBy opinions, (o) -> new Date(o.revisions[0].date).getTime()
+    
+    # Handle deletions
+    deleted = _.difference _.keys(@_renderedOpinions), _.map(opinions, (o) -> o._id)
+    for opinion_id in deleted
+      @_renderedOpinions[opinion_id].fadeOut 800, =>
+        @_renderedOpinions[opinion_id].remove()
+        delete @_renderedOpinions[opinion_id]
+
+    # Handle the rest
+    for opinion in opinions
       is_non_voting = (
         resolve.model.get("sharing")?.group_id? and
         intertwinkles.is_authenticated() and
@@ -279,6 +344,25 @@ class ShowProposalView extends BaseView
         new intertwinkles.AutoUpdatingDate(opinion.revisions[0].date))
 
     @renderTallies()
+
+  setVisibility: =>
+    resolved = resolve.model.get("resolved")?
+    passed = resolve.model.get("passed")
+    can_edit = intertwinkles.can_edit(resolve.model)
+    ownOpinion = @_getOwnOpinion()
+    is_stale = (
+      ownOpinion? and
+      new Date(ownOpinion.revisions[0].date) <
+      new Date(resolve.model.get("revisions")[0].date)
+    )
+    @$(".edit-proposal, .finalize-proposal").toggle(can_edit and (not resolved))
+    @$(".reopen-proposal").toggle(can_edit)
+    @$(".respond-link").toggle(can_edit and (not resolved) and (not is_stale))
+    @$(".confirm-prompt").toggle(can_edit and is_stale and (not resolved))
+    @$(".resolution").toggle(resolved)
+    @$(".resolution-passed").toggle(resolved and passed)
+    @$(".resolution-failed").toggle(resolved and (not passed))
+    @$(".edit-links a").toggle(can_edit and (not resolved))
 
   renderTallies: =>
     by_vote = {}
@@ -328,16 +412,15 @@ class ShowProposalView extends BaseView
           className: vote_value + " stale"
           title: "#{stale.length} Stale vote#{if stale.length == 1 then "" else "s"}"
           content: (
-            "<i>The proposal has changed since these people weighed in:</i><br />" +
-            stale.join(", ")
+            "<i>The proposal was edited after these people voted:</i><br />#{stale.join(", ")}"
           )
           count: stale.length
         }, {
           className: vote_value + " non-voting"
-          title: "#{non_voting.length} Non-voting response#{if non_voting.length == 1 then "" else "s"}"
+          title: "#{non_voting.length} Advisory response#{if non_voting.length == 1 then "" else "s"}"
           content: (
-            "<i>These people are non-members or are " +
-            "identified as non-voting:</i><br />#{non_voting.join(", ")}"
+            "<i>These people are non-members or " +
+            "non-voting:</i><br />#{non_voting.join(", ")}"
           )
           count: non_voting.length
         }]
@@ -421,6 +504,14 @@ class ShowProposalView extends BaseView
     @_saveProposal event, {passed: false}, =>
       @$(".finalize-proposal-modal").modal('hide')
 
+  showReOpenProposalForm: (event) =>
+    event.preventDefault()
+    @$(".reopen-proposal-modal").modal('show')
+
+  reOpenProposal: (event) =>
+    @_saveProposal event, {reopened: true}, =>
+      @$(".reopen-proposal-modal").modal('hide')
+
   _saveProposal: (event, changes, done) =>
     event.preventDefault()
     @$(event.currentTarget).addClass("loading").attr("disabled", true)
@@ -442,17 +533,51 @@ class ShowProposalView extends BaseView
       callback: callback
     }
 
+  showDeleteOpinionForm: (event) =>
+    event.preventDefault()
+    opinion_id = $(event.currentTarget).attr("data-id")
+    opinion = _.find resolve.model.get("opinions"), (o) -> o._id == opinion_id
+    return unless opinion?
+    rendered_user = @_renderUser(opinion.user_id, opinion.name)
+    @$("form.delete-opinion .rendered-user").html(rendered_user)
+    @$("form.delete-opinion [name=opinion_id]").val(opinion_id)
+    @$(".delete-opinion-modal").modal('show')
 
+  deleteOpinion: (event) =>
+    event.preventDefault()
+    opinion_id = @$("form.delete-opinion [name=opinion_id]").val()
+    submit = @$("form.delete-opinion input[type=submit]")
+    submit.addClass("loading").attr("disabled", true)
 
-  showResponseForm: (event) =>
+    intertwinkles.socket.once "opinion_deleted", (data) =>
+      submit.removeClass("loading").attr("disabled", false)
+      @$("form.delete-opinion [name=opinion_id]").val("")
+      @$(".delete-opinion-modal").modal('hide')
+      if data.error?
+        console.info("error", data.error)
+        flash "error", "Uh-oh. The server had an error."
+      else
+        resolve.model.set(data.proposal)
+
+    intertwinkles.socket.emit "save_proposal", {
+      callback: "opinion_deleted"
+      action: "trim"
+      proposal: { _id: resolve.model.id }
+      opinion: { _id: opinion_id }
+    }
+
+  editOpinion: (event) =>
+    @showOpinionForm(event)
+
+  showOpinionForm: (event) =>
     event.preventDefault()
     opinion_id = $(event.currentTarget).attr("data-id")
     if opinion_id?
       opinion = _.find(resolve.model.get("opinions"), (o) -> o._id == opinion_id)
-      rev = opinion[0]
+      rev = opinion.revisions[0]
       @$("#id_vote").val(rev.vote)
       @$("#id_text").val(rev.text)
-      @userChoice.set(rev.user_id, rev.name)
+      @userChoice.set(opinion.user_id, opinion.name)
     else
       @$("#id_vote").val("")
       @$("#id_text").val("")
@@ -460,7 +585,7 @@ class ShowProposalView extends BaseView
 
     @$(".edit-response-modal").modal()
 
-  saveResponse: (event) =>
+  saveOpinion: (event) =>
     event.preventDefault()
     cleaned_data = @validateFields "form.weigh-in", [
       ["#id_user_id", ((val) -> val or ""), ""]
@@ -495,8 +620,13 @@ class ShowProposalView extends BaseView
       }
     }
 
+  confirmMyVote: (event) =>
+    ownOpinion = @_getOwnOpinion()
+    $(event.currentTarget).attr("data-id", ownOpinion._id)
+    @showOpinionForm(event)
+
   _renderUser: (user_id, name) ->
-    if user_id? and intertwinkles.users?[user_id]?
+    if user_id? and intertwinkles.users?[user_id]? and intertwinkles.users[user_id].icon?
       user = intertwinkles.users[user_id]
       return "<span class='user'><img src='#{user.icon.tiny}' /> #{user.name}</span>"
     else
@@ -511,13 +641,23 @@ class Router extends Backbone.Router
     '':           'index'
 
   index: =>
-    @_display(new SplashView())
+    view = new SplashView()
+    if @view?
+      # Re-fetch proposal list if this isn't a first load.
+      intertwinkles.socket.once("proposal_list", (data) =>
+        intertwinkles.listed_proposals = data.proposals
+        view.render()
+      )
+      intertwinkles.socket.emit "get_proposal_list", {callback: "proposal_list"}
+    @_display(view)
+        
 
   newProposal: =>
     @_display(new AddProposalView())
 
   room: (id) =>
-    if not resolve.model?.id == id
+    if resolve.model?.id != id
+      resolve.model = new Proposal()
       intertwinkles.socket.once "load_proposal", (data) ->
         resolve.model.set(data.proposal)
       intertwinkles.socket.emit "get_proposal",
