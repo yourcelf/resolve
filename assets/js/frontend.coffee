@@ -297,6 +297,7 @@ class ShowProposalView extends BaseView
           .removeClass("btn-primary")
           .html("Change vote")
 
+    first_load = not @_renderedOpinions?
     @_renderedOpinions or= {}
     @_opinionRevs or= {}
 
@@ -337,7 +338,8 @@ class ShowProposalView extends BaseView
       if not @_renderedOpinions[opinion._id]?
         $(".opinions").prepend(rendered)
         @_renderedOpinions[opinion._id] = rendered
-        $("##{opinion._id}").effect("highlight", {}, 3000)
+        unless first_load
+          $("##{opinion._id}").effect("highlight", {}, 3000)
         @_opinionRevs[opinion._id] = opinion.revisions.length
       else
         @_renderedOpinions[opinion._id].replaceWith(rendered)
