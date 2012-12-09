@@ -42,6 +42,11 @@ load = (config) ->
       for rev in opinion.revisions
         rev.date = new Date() unless rev.date?
     next()
+  ProposalSchema.virtual('title').get ->
+    parts = @revisions[0].text.split(" ")
+    if parts.length < 20
+      return @revisions[0].text
+    return parts.slice(0, 20).join(" ") + "..."
   Proposal = mongoose.model("Proposal", ProposalSchema)
 
   return { Proposal }

@@ -62,7 +62,50 @@ start = (config) ->
 
   permission_denied = (req, res) ->
     res.statusCode = 403
-    return res.send("Permission denied")
+    return res.send("Permission denied") # TODO pretty 403, or redirect to login
+
+  resolve_post_event = (session, path, doc, type, opts) ->
+    event = _.extend {
+        application: "resolve"
+        type: type
+        entity_url: path
+        entity: doc._id
+        user: session.auth?.user_id
+        via_user: session.auth?.user_id
+        anon_id: session.anon_id
+        group: doc.sharing.group_id
+        data: opts.data
+      }, opts.overrides or {}
+    intertwinkles.post_event(event, config, opts.callback or (->), opts.timeout)
+
+  resolve_post_search_index = (doc) ->
+    votes_expanded = {
+      yes: "Strongly approve"
+      weak_yes: "Approve with reservations"
+      discuss: "Need more discussion"
+      no: "Have concerns"
+      block: "Block"
+      abstain: "I have a conflict of interest"
+    }
+    parts = [doc.revisions[0].text, "by #{doc.revisions[0].name}"]
+    parts = parts.concat([
+          o.name + ":", o.revisions[0].text, votes_expanded[o.revisions[0].vote]
+      ].join(" ") for o in doc.opinions)
+    if doc.resolved?
+      if doc.passed then parts.push("Passed") else parts.push("Failed")
+
+    search_data = {
+      application: "resolve"
+      entity: doc._id
+      type: "proposal"
+      url: "/p/#{doc._id}/"
+      title: doc.title
+      summary: "Proposal with #{doc.opinions.length} responses."
+      text: parts.join("\n")
+      sharing: doc.sharing
+    }
+    intertwinkles.post_search_index(search_data, config)
+
 
   context = (req, obj, initial_data) ->
     return _.extend({
@@ -100,10 +143,13 @@ start = (config) ->
       return not_found(req, res) unless doc?
       return permission_denied(req, res) unless intertwinkles.can_view(req.session, doc)
       index_res(req, res, {
-        title: "Resolve: " + doc.revisions[0].text.split(" ").slice(0, 10).join(" ") + "..."
+        title: "Resolve: " + doc.title
       }, {
         proposal: doc
       })
+      resolve_post_event(
+        req.session, req.originalUrl, doc, "visit", {timeout: 60 * 5000}
+      )
 
   iorooms.onChannel "get_proposal_list", (socket, data) ->
     if not data?.callback?
@@ -127,10 +173,17 @@ start = (config) ->
         proposal.sharing = intertwinkles.clean_sharing(socket.session, proposal)
         response.proposal = proposal
       socket.emit data.callback, response
+      resolve_post_event(
+        socket.session, "/p/#{proposal._id}", proposal, "visit", {timeout: 60 * 5000}
+      )
 
   iorooms.onChannel "save_proposal", (socket, data) ->
     if data.opinion? and not data.proposal?
       return socket.emit data.callback or "error", {error: "Missing {proposal: _id}"}
+
+    # Data we'll use to log events ("create", "update", "append", etc) for
+    # later visualization.
+    event_data = {data: {}}
 
     async.waterfall [
       # Fetch the proposal.
@@ -161,6 +214,7 @@ start = (config) ->
                   not socket.session.groups[data.proposal.sharing.group_id]?)
                 return done("Unauthorized group")
               proposal.sharing = data.proposal.sharing
+              event_data.data.sharing = intertwinkles.clean_sharing({}, proposal)
 
             # Add a revision.
             if data.proposal?.proposal?
@@ -175,6 +229,7 @@ start = (config) ->
                 name: name
                 text: data.proposal.proposal
               })
+              event_data.data.proposal = proposal.revisions[0]
             if proposal.revisions.length == 0
               return done("Missing proposal field.")
 
@@ -182,12 +237,13 @@ start = (config) ->
             if data.proposal?.passed?
               proposal.passed = data.proposal.passed
               proposal.resolved = new Date()
+              event_data.data.passed = data.proposal.passed
             else if data.proposal?.reopened?
               proposal.passed = null
               proposal.resolved = null
+              event_data.data.reopened = true
 
-            proposal.save (err, doc) ->
-              return done(err, doc, null)
+            proposal.save(done)
 
           # Add a vote.
           when "append"
@@ -201,6 +257,8 @@ start = (config) ->
             else
               user_id = null
               name = data.opinion.name
+            event_data.user = user_id
+            event_data.data.name = name
 
             if user_id?
               opinion_set = _.find proposal.opinions, (o) ->
@@ -223,17 +281,22 @@ start = (config) ->
                 text: data.opinion.text
                 vote: data.opinion.vote
               })
+            event_data.data.opinion = {
+              user_id: opinion_set.user_id
+              name: opinion_set.name
+              text: data.opinion.text
+              vote: data.opinion.vote
+            }
             proposal.save (err, doc) ->
               return done(err, doc)
 
           # Delete a vote.
           when "trim"
-            console.log data
             return done("Missing opinion id") unless data.opinion?._id
             found = false
             for opinion, i in proposal.opinions
               if opinion._id.toString() == data.opinion._id
-                proposal.opinions.splice(i, 1)
+                event_data.data.deleted_opinion = proposal.opinions.splice(i, 1)[0]
                 found = true
                 break
             unless found
@@ -243,16 +306,76 @@ start = (config) ->
               return done(err, doc)
 
     ], (err, proposal) ->
-      # Emit the result.
       if err?
         if data.callback?
           return socket.emit data.callback, {error: err}
         else
           return socket.emit "error", {error: err}
 
+      # Emit the result.
       emittal = { proposal: proposal }
       socket.broadcast.to(proposal._id).emit "proposal_change", emittal
       socket.emit(data.callback, emittal) if data.callback?
+
+      # Log events
+      resolve_post_event(
+        socket.session, "/p/#{proposal.id}/", proposal, data.action, event_data
+      )
+      # Post search index
+      resolve_post_search_index(proposal)
+      # XXX: This is an inefficient but easy strategy for syncing notifications
+      # -- one database insert for each group member for every write to this
+      # doc, as well as a wider removal. Could do better by more intelligently
+      # figuring out who needs their notification changed.
+      #
+      # Update notifications.
+      # 1. remove all notifications associated with this entity.
+      intertwinkles.clear_notices {
+        application: "resolve",
+        type: "proposal"
+        entity: proposal._id
+      }, config, (err, results) ->
+        return console.error(err) if err?
+
+        intertwinkles.broadcast_notices(socket, results.notifications)
+
+        # 2. Now post new notifications for all people that need them.
+        if proposal.sharing.group_id
+          group = socket.session.groups[proposal.sharing.group_id]
+          member_ids = (m.user for m in group.members)
+          current_voters = []
+          stale_voters = []
+          cutoff = proposal.revisions[0].date
+          for opinion in proposal.opinions
+            if opinion.user_id?
+              if opinion.revisions[0].date > cutoff
+                current_voters.push(opinion.user_id)
+              else
+                stale_voters.push(opinion.user_id)
+          needed = _.difference(member_ids, current_voters)
+          notices = []
+          for user_id in needed
+            if _.contains stale_voters, user_id
+              web = """
+                A proposal from #{group.name} has changed since you voted.
+                Please confirm your vote.
+              """
+            else
+              web = """#{group.name} needs your response to a proposal! """
+            notices.push({
+              application: "resolve"
+              type: "proposal"
+              entity: proposal._id
+              group: proposal.sharing.group_id
+              recipient: user_id
+              url: "/p/#{proposal._id}/"
+              sender: proposal.revisions[0].user_id
+              formats: { web }
+            })
+          if notices.length > 0
+            intertwinkles.post_notices notices, config, (err, results) ->
+              return console.error err if err?
+              intertwinkles.broadcast_notices(socket, results.notifications)
 
   intertwinkles.attach(config, app, iorooms)
 
