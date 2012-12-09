@@ -177,6 +177,21 @@ start = (config) ->
         socket.session, "/p/#{proposal._id}", proposal, "visit", {timeout: 60 * 5000}
       )
 
+  iorooms.onChannel "get_proposal_events", (socket, data) ->
+    unless data.proposal_id?
+      return socket.emit "error", {error: "Missing proposal ID"}
+    unless data.callback?
+      return socket.emit "error", {error: "Missing callback"}
+    schema.Proposal.findOne {_id: data.proposal_id}, (err, doc) ->
+      if not intertwinkles.can_view(socket.session, doc)
+        return socket.emit "error", {error: "Permission denied"}
+      intertwinkles.get_events {
+        application: "resolve"
+        entity: doc._id
+      }, config, (err, results) ->
+        return socket.emit "error", {error: err} if err?
+        socket.emit data.callback, {events: results?.events}
+
   iorooms.onChannel "save_proposal", (socket, data) ->
     if data.opinion? and not data.proposal?
       return socket.emit data.callback or "error", {error: "Missing {proposal: _id}"}

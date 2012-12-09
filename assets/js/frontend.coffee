@@ -253,6 +253,12 @@ class ShowProposalView extends BaseView
       }
     @addView ".sharing", sharingButton
     @postRender()
+    @buildTimeline()
+    _timeline_timeout = null
+    buildWithTimeout = =>
+      clearTimeout(build_timeline_timeout) if _timeline_timeout?
+      _timeline_timeout = setTimeout @buildTimeline, 1000
+    resolve.model.on "change", buildWithTimeout, this
 
   postRender: =>
     @renderProposal()
@@ -631,6 +637,54 @@ class ShowProposalView extends BaseView
       return "<span class='user'><img src='#{user.icon.tiny}' /> #{user.name}</span>"
     else
       return "<span class='user'><i class='icon-user'></i> #{name}</span>"
+
+  buildTimeline: =>
+    if resolve.model.id
+      callback = "resolve_events_#{resolve.model.id}"
+      intertwinkles.socket.once callback, (data) =>
+        console.log data
+        collection = new intertwinkles.EventCollection()
+        for event in data.events
+          event.date = new Date(event.date)
+          collection.add new intertwinkles.Event(event)
+        intertwinkles.build_timeline @$(".timeline-holder"), collection, (event) ->
+          user = intertwinkles.users?[event.user]
+          via_user = intertwinkles.users?[event.via_user]
+          via_user = null if via_user? and via_user.id == user?.id
+          if user?
+            icon = "<img src='#{user.icon.tiny}' />"
+          else
+            icon = "<i class='icon-user'></i>"
+          switch event.type
+            when "create"
+              title = "Proposal created"
+              content = "#{user?.name or "Anonymous"} created this proposal."
+            when "visit"
+              title = "Visit"
+              content = "#{user?.name or "Anonymous"} stopped by."
+            when "append"
+              title = "Response added"
+              if via_user?
+                content = "#{user?.name or event.data.name} responded (via #{via_user.name})."
+              else
+                content = "#{user?.name or event.data.name} responded."
+            when "update"
+              title = "Proposal updated"
+              content = "#{user?.name or "Anonymous"} updated the proposal."
+            when "trim"
+              title = "Response removed"
+              content = "#{user?.name or "Anonymous"} removed
+                        the response by #{event.data.deleted_opinion.name}."
+          return """
+            <a class='#{ event.type }' rel='popover' data-placement='bottom'
+              data-trigger='hover' title='#{ title }'
+              data-content='#{ content }'>#{ icon }</a>
+          """
+      intertwinkles.socket.emit "get_proposal_events", {
+        callback: callback
+        proposal_id: resolve.model.id
+      }
+
 
 
 
