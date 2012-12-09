@@ -256,7 +256,7 @@ class ShowProposalView extends BaseView
     @buildTimeline()
     _timeline_timeout = null
     buildWithTimeout = =>
-      clearTimeout(build_timeline_timeout) if _timeline_timeout?
+      clearTimeout(_timeline_timeout) if _timeline_timeout?
       _timeline_timeout = setTimeout @buildTimeline, 1000
     resolve.model.on "change", buildWithTimeout, this
 
@@ -642,7 +642,6 @@ class ShowProposalView extends BaseView
     if resolve.model.id
       callback = "resolve_events_#{resolve.model.id}"
       intertwinkles.socket.once callback, (data) =>
-        console.log data
         collection = new intertwinkles.EventCollection()
         for event in data.events
           event.date = new Date(event.date)

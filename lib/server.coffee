@@ -355,7 +355,7 @@ start = (config) ->
         intertwinkles.broadcast_notices(socket, results.notifications)
 
         # 2. Now post new notifications for all people that need them.
-        if proposal.sharing.group_id
+        if proposal.sharing.group_id and not proposal.resolved?
           group = socket.session.groups[proposal.sharing.group_id]
           member_ids = (m.user for m in group.members)
           current_voters = []

@@ -26,11 +26,16 @@ block body
 
   script(type='text/template', id='listedProposalTemplate')
     li.listed-proposal.
+      <% if (proposal.resolved != null) { %>
+        <span class='label <%= proposal.passed ? "label-success" : "" %>'>
+          <%= proposal.passed ? "Approved" : "Rejected" %>
+        </span>
+      <% } %>
       <a class='softnav' href='<%= url %>'><%= proposal.revisions[0].text.split(" ").slice(0, 20).join(" ") %>...</a>
       <br />
       <span class='date proposal-listing-date' style='float: right;' data-date="<%= proposal.revisions[0].date %>"></span>
       <% if (group) { %>
-        <span class='label label-success'><%= group.name %></span>
+        <span class=''><%= group.name %></span>
       <% } %>
       <span class='responses small-green'>(<%= proposal.opinions.length %> responses)</span>
 
