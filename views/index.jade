@@ -103,6 +103,7 @@ block body
               &nbsp;Edit
             button.btn.finalize-proposal(type='button') Finalize
           div(style='clear: both;')
+          div.proposal-twinkle-holder.pull-right
           div.byline
             span.editors
             span.date.pull-right
@@ -234,6 +235,15 @@ block body
       <div class='text'><%- rendered_text %></div>
       <div class='byline'>
         <span class='user'><%- rendered_user %></span>
+        <div class='twinkle-holder' style='display: inline-block;'>
+          <span class='twinkles'
+                data-application='resolve'
+                data-entity='<%= proposal_id %>'
+                data-subentity='<%= _id %>'
+                data-recipient='<%= user_id %>'
+                data-url='<%= window.location.pathname %>'></span>
+        </div>
+              
         <span class='date pull-right'></span>
       </div>
       <div class='edit-links'>

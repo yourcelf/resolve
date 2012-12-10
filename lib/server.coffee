@@ -17,6 +17,14 @@ start = (config) ->
   io = socketio.listen(app, {"log level": 0})
   iorooms = new RoomManager("/iorooms", io, sessionStore)
   io.of("/iorooms").setMaxListeners(15)
+  iorooms.authorizeJoinRoom = (session, name, callback) ->
+    # Only allow to join the room if we're allowed to view the proposal.
+    schema.Proposal.findOne {'_id': name}, 'sharing', (err, doc) ->
+      return callback(err) if err?
+      if intertwinkles.can_view(session, doc)
+        callback(null)
+      else
+        callback("Permission denied")
   intertwinkles.attach(config, app, iorooms)
 
   #
@@ -150,6 +158,86 @@ start = (config) ->
       resolve_post_event(
         req.session, req.originalUrl, doc, "visit", {timeout: 60 * 5000}
       )
+
+  iorooms.onChannel "post_twinkle", (socket, data) ->
+    async.waterfall [
+      (done) ->
+        params = data.twinkle
+        for key in ["entity", "subentity"]
+          return done("Missing #{key}") unless data[key]?
+
+        schema.Proposal.findOne {_id: data.entity}, (err, doc) ->
+          return done(err) if err?
+          return done("Not found") unless doc?
+          unless intertwinkles.can_view(socket.session, doc)
+            return done("Permission denied")
+
+          recipient_id = null
+          opinion = _.find doc.opinions, (o) -> o._id.toString() == data.subentity
+          if opinion
+            recipient_id = opinion.user_id
+          else
+            revision = _.find doc.revisions, (r) -> r._id.toString() == data.subentity
+            if revision
+              recipient_id = revision.user_id
+            else
+              return done("Unknown subentity")
+          return done(null, doc, recipient_id)
+
+      (doc, recipient_id, done) ->
+        intertwinkles.post_twinkle {
+          application: "resolve"
+          entity: doc._id
+          subentity: data.subentity
+          url: "/p/#{doc._id}/"
+          sender: socket.session.auth?.user_id
+          sender_anon_id: socket.session.anon_id
+          recipient: recipient_id
+        }, config, (err, results) ->
+          done(err, results, doc)
+
+    ], (err, results, doc) ->
+      return socket.emit "error", {error: err} if err?
+      socket.broadcast.to(doc.id).emit "twinkles", { twinkles: [results.twinkle] }
+      socket.emit "twinkles", { twinkles: [results.twinkle] }
+
+  iorooms.onChannel "remove_twinkle", (socket, data) ->
+    async.waterfall [
+      (done) ->
+        return done("Missing twinkle_id") unless data.twinkle_id?
+        return done("Missing entity") unless data.entity?
+        schema.Proposal.findOne {_id: data.entity}, 'sharing', (err, doc) ->
+          unless intertwinkles.can_view(socket.session, doc)
+            return done("Permission denied")
+
+          intertwinkles.remove_twinkle {
+            twinkle_id: data.twinkle_id
+            entity: data.entity
+            sender: socket.session.auth?.user_id or null
+            sender_anon_id: socket.session.anon_id
+          }, config, (err, results) ->
+            return done(err, results, doc)
+    ], (err, results, doc) ->
+      return socket.emit "error", {error: err} if err?
+      socket.broadcast.to(doc.id).emit "twinkles", {remove: data.twinkle_id}
+      socket.emit "twinkles", {remove: data.twinkle_id}
+
+  iorooms.onChannel "get_twinkles", (socket, data) ->
+    async.waterfall [
+      (done) ->
+        return done("Missing entity") unless data.entity?
+        schema.Proposal.findOne {_id: data.entity}, (err, doc) ->
+          return done(err) if err?
+          unless intertwinkles.can_view(socket.session, doc)
+            return done("Permission denied")
+          intertwinkles.get_twinkles {
+            application: "resolve"
+            entity: doc._id
+          }, config, done
+
+    ], (err, twinkles) ->
+      return socket.emit "error", {error: err} if err?
+      socket.emit "twinkles", twinkles
 
   iorooms.onChannel "get_proposal_list", (socket, data) ->
     if not data?.callback?
@@ -317,7 +405,6 @@ start = (config) ->
             unless found
               return done("Opinion for `#{data.opinion._id}` not found.")
             proposal.save (err, doc) ->
-              console.log doc
               return done(err, doc)
 
     ], (err, proposal) ->
