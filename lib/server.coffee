@@ -173,13 +173,16 @@ start = (config) ->
             return done("Permission denied")
 
           recipient_id = null
-          opinion = _.find doc.opinions, (o) -> o._id.toString() == data.subentity
-          if opinion
-            recipient_id = opinion.user_id
+          revision = _.find doc.revisions, (r) -> r._id.toString() == data.subentity
+          if revision
+            recipient_id = revision.user_id
           else
-            revision = _.find doc.revisions, (r) -> r._id.toString() == data.subentity
-            if revision
-              recipient_id = revision.user_id
+            opinion = _.find doc.opinions, (o) ->
+              for rev in o.revisions
+                return true if rev._id.toString() == data.subentity
+              return false
+            if opinion
+              recipient_id = opinion.user_id
             else
               return done("Unknown subentity")
           return done(null, doc, recipient_id)
@@ -380,10 +383,15 @@ start = (config) ->
               }
               proposal.opinions.push(opinion_set)
             else
-              opinion_set.revisions.unshift({
-                text: data.opinion.text
-                vote: data.opinion.vote
-              })
+              if (opinion_set.revisions.length > 0 and
+                  opinion_set.revisions[0].text == data.opinion.text and
+                  opinion_set.revisions[0].vote == data.opinion.vote)
+                opinion_set.revisions[0].date = new Date()
+              else
+                opinion_set.revisions.unshift({
+                  text: data.opinion.text
+                  vote: data.opinion.vote
+                })
             event_data.data.opinion = {
               user_id: opinion_set.user_id
               name: opinion_set.name

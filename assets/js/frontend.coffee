@@ -170,6 +170,7 @@ class ShowProposalView extends intertwinkles.BaseView
     intertwinkles.socket.removeAllListeners("proposal_change")
     resolve.model.off(null, null, this)
     intertwinkles.user.off(null, null, this)
+    (view.remove() for key,view of @twinkle_map or {})
     super()
 
   onProposalData: (data) =>
@@ -283,6 +284,7 @@ class ShowProposalView extends intertwinkles.BaseView
       )
       rendered = $(@opinionTemplate({
         _id: opinion._id
+        rev_id: opinion.revisions[0]._id
         proposal_id: resolve.model.id
         user_id: opinion.user_id
         rendered_user: @renderUser(opinion.user_id, opinion.name)
