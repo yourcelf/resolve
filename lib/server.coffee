@@ -82,7 +82,10 @@ start = (config) ->
         via_user: session.auth?.user_id
         anon_id: session.anon_id
         group: doc.sharing.group_id
-        data: opts.data
+        data: {
+          title: doc.title
+          action: opts.data
+        }
       }, opts.overrides or {}
     intertwinkles.post_event(event, config, opts.callback or (->), opts.timeout)
 

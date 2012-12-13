@@ -234,6 +234,8 @@ class ShowProposalView extends intertwinkles.BaseView
       @addView ".proposal .date-auto", new intertwinkles.AutoUpdatingDate(rev.date)
       @userChoice = new intertwinkles.UserChoice()
       @addView(".edit-response-modal .name-input", @userChoice)
+      title = resolve.model.get("revisions")[0].text.split(" ").slice(0, 20).join(" ") + "..."
+      $("title").html "Proposal: #{title}"
 
     resolved = resolve.model.get("resolved")
     if resolved?
@@ -657,6 +659,7 @@ class Router extends Backbone.Router
       )
       intertwinkles.socket.emit "get_proposal_list", {callback: "proposal_list"}
     @_display(view)
+    $("title").html "Resolve: Decide Something"
         
 
   newProposal: =>
@@ -670,7 +673,6 @@ class Router extends Backbone.Router
       intertwinkles.socket.emit "get_proposal",
         proposal: {_id: id}
         callback: "load_proposal"
-
     @_display(new ShowProposalView(id: id))
 
   _display: (view) =>
