@@ -16,7 +16,7 @@ start = (config) ->
   sessionStore = new RedisStore()
   io = socketio.listen(app, {"log level": 0})
   iorooms = new RoomManager("/iorooms", io, sessionStore)
-  io.of("/iorooms").setMaxListeners(15)
+  io.of("/iorooms").setMaxListeners(20)
   iorooms.authorizeJoinRoom = (session, name, callback) ->
     # Only allow to join the room if we're allowed to view the proposal.
     schema.Proposal.findOne {'_id': name}, 'sharing', (err, doc) ->
@@ -124,10 +124,7 @@ start = (config) ->
         intertwinkles.get_initial_data(req?.session),
         initial_data or {}
       )
-      conf: {
-        api_url: config.intertwinkles.api_url
-        apps: config.intertwinkles.apps
-      }
+      conf: intertwinkles.clean_conf(config)
       flash: req.flash()
     }, obj)
 
