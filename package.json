@@ -26,7 +26,7 @@
         "express": "~2",
         "jade": "~0",
         "markdown": "~0",
-        "mongoose": "~3",
+        "mongoose": "~3.4",
         "async": "~0",
         "node-iorooms": "git+https://github.com/yourcelf/node-iorooms.git",
         "node-intertwinkles": "git+https://github.com/yourcelf/node-intertwinkles.git"
